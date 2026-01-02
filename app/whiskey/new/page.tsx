@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Whiskey } from '@/types'
-import { storage } from '@/lib/storage'
 import { allFlavorTags } from '@/data/flavorTags'
 
 export default function NewWhiskeyPage() {
@@ -45,7 +44,7 @@ export default function NewWhiskeyPage() {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!formData.name.trim()) {
@@ -79,28 +78,51 @@ export default function NewWhiskeyPage() {
 
     setIsSubmitting(true)
 
-    const newWhiskey: Whiskey = {
-      id: Date.now().toString(),
-      name: formData.name,
-      image: formData.image,
-      price: parseFloat(formData.price),
-      description: formData.description,
-      flavorTags: selectedTags,
-      averageRating: 0,
-      totalReviews: 0,
-      ratingDistribution: {
-        5: 0,
-        4: 0,
-        3: 0,
-        2: 0,
-        1: 0,
-      },
-    }
+    try {
+      const newWhiskey: Whiskey = {
+        id: '', // 讓 Supabase 自動產生 ID
+        name: formData.name,
+        image: formData.image,
+        price: parseFloat(formData.price),
+        description: formData.description,
+        flavorTags: selectedTags,
+        averageRating: 0,
+        totalReviews: 0,
+        ratingDistribution: {
+          5: 0,
+          4: 0,
+          3: 0,
+          2: 0,
+          1: 0,
+        },
+      }
 
-    storage.saveWhiskey(newWhiskey)
-    
-    // 導向到新建立的酒款詳情頁
-    router.push(`/whiskey/${newWhiskey.id}`)
+      // 透過 API 儲存到 Supabase
+      const response = await fetch('/api/whiskeys', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newWhiskey),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || '新增失敗')
+      }
+
+      const savedWhiskey = await response.json()
+      
+      // 重新整理頁面資料
+      router.refresh()
+      
+      // 導向到新建立的酒款詳情頁
+      router.push(`/whiskey/${savedWhiskey.id}`)
+    } catch (error) {
+      console.error('新增酒款失敗:', error)
+      alert(error instanceof Error ? error.message : '新增失敗，請稍後再試')
+      setIsSubmitting(false)
+    }
   }
 
   return (
