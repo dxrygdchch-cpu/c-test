@@ -35,9 +35,10 @@ export default function WhiskeyDetailPage() {
         if (whiskeyError) throw whiskeyError;
 
         if (whiskeyData) {
-          // ✨ 核心修正：將資料庫欄位 (底線) 轉為前端變數 (駝峰)，並提供預設值防止崩潰
+          // ✨ 核心修正：將資料庫欄位轉換為前端變數，防止 RatingDistribution 崩潰
           const safeWhiskey: Whiskey = {
             ...whiskeyData,
+            // 這裡會檢查底線命名(資料庫)或駝峰命名(程式碼)，若皆無則給予 0 分預設值
             ratingDistribution: whiskeyData.rating_distribution || whiskeyData.ratingDistribution || { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 },
             totalReviews: whiskeyData.total_reviews || whiskeyData.totalReviews || 0,
             averageRating: whiskeyData.average_rating || whiskeyData.averageRating || 0,
@@ -59,7 +60,7 @@ export default function WhiskeyDetailPage() {
       } catch (error) {
         console.error("載入詳情失敗:", error);
       } finally {
-        // ✨ 確保關閉載入狀態，解決「載入中」問題
+        // ✨ 確保關閉載入狀態，解決「載入中」轉不停的問題
         setIsLoading(false); 
       }
     }
@@ -67,6 +68,7 @@ export default function WhiskeyDetailPage() {
     loadData();
   }, [id]);
 
+  // 提交評論後的自動更新邏輯
   const handleReviewSubmit = async () => {
     const { data: reviewsData } = await supabase
       .from('reviews')
@@ -76,67 +78,90 @@ export default function WhiskeyDetailPage() {
     if (reviewsData) setReviews(reviewsData);
   };
 
+  // 渲染：載入中畫面
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-xl font-medium text-gray-600">載入中...</div>
+      <div className="flex items-center justify-center min-h-screen bg-white">
+        <div className="text-xl font-medium text-gray-600 animate-pulse">載入中...</div>
       </div>
     );
   }
 
+  // 渲染：找不到資料
   if (!whiskey) {
     return (
-      <div className="p-8 text-center">
-        <h1 className="text-2xl font-bold mb-4">找不到該酒款資料</h1>
-        <button onClick={() => router.push('/whiskey')} className="text-blue-600">返回酒款列表</button>
+      <div className="p-8 text-center min-h-screen bg-white">
+        <h1 className="text-2xl font-bold mb-4 text-gray-800">找不到該酒款資料</h1>
+        <button 
+          onClick={() => router.push('/whiskey')} 
+          className="text-blue-600 hover:underline"
+        >
+          返回酒款列表
+        </button>
       </div>
     );
   }
 
+  // 渲染：正常的詳情頁面
   return (
     <div className="min-h-screen bg-gray-50 py-12">
       <div className="max-w-4xl mx-auto px-4">
-        {/* 基本資訊卡片 */}
+        {/* 酒款基本資訊卡片 */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
           <div className="md:flex">
-            <div className="md:w-1/3">
-              <img src={whiskey.image} alt={whiskey.name} className="w-full h-full object-cover" />
+            <div className="md:w-1/3 bg-gray-100">
+              <img 
+                src={whiskey.image} 
+                alt={whiskey.name} 
+                className="w-full h-full object-cover min-h-[300px]" 
+              />
             </div>
             <div className="p-8 md:w-2/3">
               <h1 className="text-3xl font-bold text-gray-900 mb-2">{whiskey.name}</h1>
               <div className="flex items-center mb-4">
                 <StarRating rating={whiskey.averageRating} />
-                <span className="ml-2 text-gray-600">({whiskey.totalReviews} 則評論)</span>
+                <span className="ml-2 text-gray-600 text-sm">
+                  ({whiskey.totalReviews} 則評論)
+                </span>
               </div>
-              <p className="text-2xl font-bold text-gray-900 mb-4">NT$ {whiskey.price?.toLocaleString()}</p>
-              <p className="text-gray-600 mb-6">{whiskey.description}</p>
+              <p className="text-2xl font-bold text-gray-900 mb-4">
+                NT$ {whiskey.price?.toLocaleString()}
+              </p>
+              <p className="text-gray-600 mb-6 leading-relaxed">
+                {whiskey.description || '暫無描述'}
+              </p>
+              
               <div className="flex flex-wrap gap-2">
-                {whiskey.flavorTags.map(tag => (
-                  <span key={tag} className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">{tag}</span>
+                {whiskey.flavorTags && whiskey.flavorTags.map((tag: string) => (
+                  <span key={tag} className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">
+                    {tag}
+                  </span>
                 ))}
               </div>
             </div>
           </div>
         </div>
 
-        {/* 評分與表單 */}
+        {/* 評分與表單區塊 */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
           <div className="md:col-span-1">
-            <h2 className="text-xl font-bold mb-4">評分分佈</h2>
+            <h2 className="text-xl font-bold mb-4 text-gray-900">評分分佈</h2>
             <RatingDistribution 
               distribution={whiskey.ratingDistribution} 
               totalReviews={whiskey.totalReviews} 
             />
           </div>
           <div className="md:col-span-2">
-            <h2 className="text-xl font-bold mb-4">發表評價</h2>
+            <h2 className="text-xl font-bold mb-4 text-gray-900">發表評價</h2>
             <ReviewForm whiskeyId={id} onSubmit={handleReviewSubmit} />
           </div>
         </div>
 
         {/* 評論列表 */}
-        <div>
-          <h2 className="text-2xl font-bold mb-6">全部評論 ({reviews.length})</h2>
+        <div className="border-t pt-12">
+          <h2 className="text-2xl font-bold mb-6 text-gray-900">
+            全部評論 ({reviews.length})
+          </h2>
           <ReviewList reviews={reviews} />
         </div>
       </div>
