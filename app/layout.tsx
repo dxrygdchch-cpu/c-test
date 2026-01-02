@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import SessionProvider from '@/components/SessionProvider'
+import Navbar from '@/components/Navbar'
 
 export const metadata: Metadata = {
   title: '威士忌評論網站',
@@ -13,7 +15,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-TW">
-      <body>{children}</body>
+      <body>
+        <SessionProvider>
+          <Navbar />
+          {children}
+        </SessionProvider>
+      </body>
     </html>
   )
 }
