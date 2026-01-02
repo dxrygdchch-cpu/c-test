@@ -7,129 +7,139 @@ import RatingDistribution from '@/components/RatingDistribution'
 import ReviewForm from '@/components/ReviewForm'
 import ReviewList from '@/components/ReviewList'
 import { Whiskey, Review } from '@/types'
-import { storage } from '@/lib/storage'
-import { initSampleData } from '@/lib/initData'
+import { supabase } from '@/lib/supabase'
 
 export default function WhiskeyDetailPage() {
   const params = useParams()
   const router = useRouter()
   const id = params.id as string
-  
+
+  const [isLoading, setIsLoading] = useState(true)
   const [whiskey, setWhiskey] = useState<Whiskey | null>(null)
   const [reviews, setReviews] = useState<Review[]>([])
 
   useEffect(() => {
-    // 初始化範例資料（僅在第一次載入時）
-    initSampleData()
-    
-    const whiskeyData = storage.getWhiskey(id)
-    if (whiskeyData) {
-      setWhiskey(whiskeyData)
-      const reviewsData = storage.getReviews(id)
-      setReviews(reviewsData.sort((a, b) => 
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      ))
-    }
-  }, [id])
+    async function loadData() {
+      if (!id) return;
 
-  const handleReviewSubmit = (newReview: Review) => {
-    setReviews((prev) => [newReview, ...prev])
-    // 重新載入酒款資料以更新評分
-    const updatedWhiskey = storage.getWhiskey(id)
-    if (updatedWhiskey) {
-      setWhiskey(updatedWhiskey)
+      try {
+        setIsLoading(true);
+
+        // 1. 從 Supabase 抓取酒款資料
+        const { data: whiskeyData, error: whiskeyError } = await supabase
+          .from('whiskies')
+          .select('*')
+          .eq('id', id)
+          .single();
+
+        if (whiskeyError) throw whiskeyError;
+
+        if (whiskeyData) {
+          // ✨ 核心修正：將資料庫欄位 (底線) 轉為前端變數 (駝峰)，並提供預設值防止崩潰
+          const safeWhiskey: Whiskey = {
+            ...whiskeyData,
+            ratingDistribution: whiskeyData.rating_distribution || whiskeyData.ratingDistribution || { "1": 0, "2": 0, "3": 0, "4": 0, "5": 0 },
+            totalReviews: whiskeyData.total_reviews || whiskeyData.totalReviews || 0,
+            averageRating: whiskeyData.average_rating || whiskeyData.averageRating || 0,
+            flavorTags: whiskeyData.flavor_tags || whiskeyData.flavorTags || []
+          };
+          
+          setWhiskey(safeWhiskey);
+
+          // 2. 抓取評論
+          const { data: reviewsData, error: reviewsError } = await supabase
+            .from('reviews')
+            .select('*')
+            .eq('whiskey_id', id)
+            .order('created_at', { ascending: false });
+
+          if (reviewsError) throw reviewsError;
+          if (reviewsData) setReviews(reviewsData);
+        }
+      } catch (error) {
+        console.error("載入詳情失敗:", error);
+      } finally {
+        // ✨ 確保關閉載入狀態，解決「載入中」問題
+        setIsLoading(false); 
+      }
     }
+
+    loadData();
+  }, [id]);
+
+  const handleReviewSubmit = async () => {
+    const { data: reviewsData } = await supabase
+      .from('reviews')
+      .select('*')
+      .eq('whiskey_id', id)
+      .order('created_at', { ascending: false });
+    if (reviewsData) setReviews(reviewsData);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-xl font-medium text-gray-600">載入中...</div>
+      </div>
+    );
   }
 
   if (!whiskey) {
     return (
-      <div className="min-h-screen bg-white p-8">
-        <div className="max-w-6xl mx-auto">
-          <p className="text-center text-gray-500">載入中...</p>
-        </div>
+      <div className="p-8 text-center">
+        <h1 className="text-2xl font-bold mb-4">找不到該酒款資料</h1>
+        <button onClick={() => router.push('/whiskey')} className="text-blue-600">返回酒款列表</button>
       </div>
-    )
+    );
   }
 
   return (
-    <div className="min-h-screen bg-white">
-      <div className="max-w-6xl mx-auto px-4 py-8">
-        {/* 上方：官方資訊卡片 */}
-        <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
-          <div className="flex flex-col md:flex-row gap-6">
-            <div className="flex-shrink-0">
-              <img
-                src={whiskey.image}
-                alt={whiskey.name}
-                className="w-full md:w-64 h-64 object-cover rounded-lg"
-              />
+    <div className="min-h-screen bg-gray-50 py-12">
+      <div className="max-w-4xl mx-auto px-4">
+        {/* 基本資訊卡片 */}
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-8">
+          <div className="md:flex">
+            <div className="md:w-1/3">
+              <img src={whiskey.image} alt={whiskey.name} className="w-full h-full object-cover" />
             </div>
-            <div className="flex-1">
-              <h1 className="text-3xl font-bold mb-2">{whiskey.name}</h1>
-              
-              <div className="flex items-center gap-4 mb-4">
-                <StarRating rating={whiskey.averageRating} size={24} showNumber />
-                <span className="text-gray-600">
-                  {whiskey.totalReviews} 則評論
-                </span>
+            <div className="p-8 md:w-2/3">
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">{whiskey.name}</h1>
+              <div className="flex items-center mb-4">
+                <StarRating rating={whiskey.averageRating} />
+                <span className="ml-2 text-gray-600">({whiskey.totalReviews} 則評論)</span>
               </div>
-
-              <div className="mb-4">
-                <span className="text-2xl font-semibold text-gray-900">
-                  NT$ {whiskey.price.toLocaleString()}
-                </span>
+              <p className="text-2xl font-bold text-gray-900 mb-4">NT$ {whiskey.price?.toLocaleString()}</p>
+              <p className="text-gray-600 mb-6">{whiskey.description}</p>
+              <div className="flex flex-wrap gap-2">
+                {whiskey.flavorTags.map(tag => (
+                  <span key={tag} className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm">{tag}</span>
+                ))}
               </div>
-
-              <p className="text-gray-700 mb-4 leading-relaxed">
-                {whiskey.description}
-              </p>
-
-              {whiskey.flavorTags.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-700 mb-2">
-                    風味標籤
-                  </h3>
-                  <div className="flex flex-wrap gap-2">
-                    {whiskey.flavorTags.map((tag) => (
-                      <span
-                        key={tag}
-                        className="px-3 py-1 bg-gray-100 text-gray-700 rounded-full text-sm"
-                      >
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
 
-        {/* 評分分佈 */}
-        {whiskey.totalReviews > 0 && (
-          <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4">評分分佈</h2>
-            <RatingDistribution
-              distribution={whiskey.ratingDistribution}
-              totalReviews={whiskey.totalReviews}
+        {/* 評分與表單 */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+          <div className="md:col-span-1">
+            <h2 className="text-xl font-bold mb-4">評分分佈</h2>
+            <RatingDistribution 
+              distribution={whiskey.ratingDistribution} 
+              totalReviews={whiskey.totalReviews} 
             />
           </div>
-        )}
-
-        {/* 評論表單 */}
-        <div className="mb-6">
-          <ReviewForm whiskeyId={id} onSubmit={handleReviewSubmit} />
+          <div className="md:col-span-2">
+            <h2 className="text-xl font-bold mb-4">發表評價</h2>
+            <ReviewForm whiskeyId={id} onSubmit={handleReviewSubmit} />
+          </div>
         </div>
 
         {/* 評論列表 */}
         <div>
-          <h2 className="text-2xl font-semibold mb-4">
-            評論 ({reviews.length})
-          </h2>
+          <h2 className="text-2xl font-bold mb-6">全部評論 ({reviews.length})</h2>
           <ReviewList reviews={reviews} />
         </div>
       </div>
     </div>
-  )
+  );
 }
-
